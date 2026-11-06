@@ -34,6 +34,7 @@ spending_limit_usd = 25000.00
 high_risk_tools = ["place_fuel_order"]
 
 [agents.fuel-order-assistant.tool_timeouts_seconds]
+refresh_tank_levels = 2.0
 check_tank_inventory = 3.0
 get_price_quote = 3.0
 place_fuel_order = 5.0

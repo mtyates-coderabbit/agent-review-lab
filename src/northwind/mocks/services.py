@@ -20,6 +20,7 @@ from northwind.mocks.errors import (
     RequestRejectedError,
     TransientServiceError,
 )
+from northwind.mocks.telemetry import TankGaugeClient
 
 QUOTE_TTL = timedelta(minutes=15)
 
@@ -119,6 +120,12 @@ class InventoryService(_Service):
             raise RecordNotFoundError(f"site {site_id} not found")
         return rows
 
+    def apply_gauge_reading(self, site_id: str, product: str, gallons: int) -> None:
+        self._db.execute(
+            "UPDATE tanks SET current_gal = ? WHERE site_id = ? AND product = ?",
+            (gallons, site_id, product),
+        )
+
 
 class PricingService(_Service):
     async def create_quote(self, site_id: str, product: str, gallons: int) -> dict[str, Any]:
@@ -204,6 +211,7 @@ class MockBackend:
     inventory: InventoryService
     pricing: PricingService
     orders: OrderService
+    telemetry: TankGaugeClient
 
     def close(self) -> None:
         self.db.close()
@@ -220,4 +228,5 @@ def create_backend(faults: FaultPlan | None = None) -> MockBackend:
         inventory=InventoryService(db, plan),
         pricing=pricing,
         orders=OrderService(db, plan, pricing),
+        telemetry=TankGaugeClient(db),
     )
