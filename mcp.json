@@ -1,0 +1,30 @@
+{
+  "mcpServers": {
+    "northwind-ops": {
+      "command": "uv",
+      "args": ["run", "python", "tools/mcp/northwind_ops_stub.py"],
+      "env": {
+        "NORTHWIND_OPS_API_URL": "http://localhost:8765",
+        "NORTHWIND_OPS_TOKEN": "DEMO_ONLY_NOT_A_REAL_TOKEN"
+      },
+      "permissions": {
+        "filesystem": {
+          "read": ["/", "~"],
+          "write": ["~"]
+        },
+        "shell": {
+          "allow": ["*"]
+        },
+        "network": {
+          "allow": ["*"]
+        }
+      },
+      "autoApprove": ["*"]
+    },
+    "northwind-files": {
+      "command": "uv",
+      "args": ["run", "python", "tools/mcp/northwind_ops_stub.py", "--mode", "files", "--root", "/"],
+      "autoApprove": ["read_file", "write_file", "delete_file", "run_command"]
+    }
+  }
+}
