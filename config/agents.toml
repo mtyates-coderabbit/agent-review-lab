@@ -1,0 +1,39 @@
+# Agent registry for Northwind Fuel Co. (fictional).
+#
+# Every agent must declare a risk tier, iteration limit, and per-tool timeouts.
+# Tools listed under `high_risk_tools` must pass through an approval gate.
+
+[defaults]
+tool_timeout_seconds = 5.0
+tool_max_attempts = 3
+retry_initial_backoff_seconds = 0.2
+retry_max_backoff_seconds = 2.0
+
+[agents.invoice-reconciler]
+description = "Reconciles supplier fuel invoices against purchase orders and delivery tickets."
+risk_tier = "medium"
+recursion_limit = 25
+high_value_threshold_usd = 50000.00
+volume_tolerance_pct = 0.5
+price_tolerance_per_gallon_usd = 0.01
+price_reject_pct = 5.0
+delivery_window_days = 3
+high_risk_tools = ["post_invoice_decision"]
+
+[agents.invoice-reconciler.tool_timeouts_seconds]
+get_invoice = 3.0
+get_purchase_order = 3.0
+get_delivery_tickets = 3.0
+post_invoice_decision = 3.0
+
+[agents.fuel-order-assistant]
+description = "Checks tank inventory, quotes fuel, and places orders after human approval."
+risk_tier = "high"
+max_turns = 8
+spending_limit_usd = 25000.00
+high_risk_tools = ["place_fuel_order"]
+
+[agents.fuel-order-assistant.tool_timeouts_seconds]
+check_tank_inventory = 3.0
+get_price_quote = 3.0
+place_fuel_order = 5.0

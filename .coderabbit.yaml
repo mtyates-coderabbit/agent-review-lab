@@ -1,0 +1,255 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit review configuration for agent-review-lab.
+# Reference: https://docs.coderabbit.ai/reference/configuration
+#
+# Layout:
+#   reviews.profile            - assertive: surface nitpicks as well as defects
+#   reviews.path_instructions  - what to look for in each part of the agent stack
+#   reviews.tools              - static analyzers (Ruff reads [tool.ruff] in pyproject.toml)
+#   reviews.pre_merge_checks   - pass/fail gates for agent safety controls
+#   knowledge_base             - AGENTS.md is picked up as the team's coding guidelines
+
+language: en-US
+early_access: false
+
+reviews:
+  profile: assertive
+  high_level_summary: true
+  review_status: true
+  collapse_walkthrough: false
+  sequence_diagrams: true
+  estimate_code_review_effort: true
+  poem: false
+  in_progress_fortune: false
+  suggested_labels: true
+  auto_apply_labels: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+
+  path_filters:
+    - "!traces/**"
+    - "!**/*.jsonl"
+
+  path_instructions:
+    - path: "src/northwind/agents/**"
+      instructions: |
+        This is agent code. Review it against AGENTS.md and focus on:
+        - Tool-call correctness: arguments passed in the order and type the tool or service
+          signature expects; return values and error results handled; no tool invoked
+          outside run_tool() (which applies the kill switch, timeout, retries, and tracing).
+        - Kill-switch coverage: every tool call path checks KillSwitch before acting, and
+          KillSwitchEngaged is never caught and ignored.
+        - Tracing coverage: every node, tool call, and routing/approval decision emits a span
+          or record_decision() event.
+        - Approval gates: any tool listed in high_risk_tools (config/agents.toml) or any new
+          tool that spends money or writes to a system of record must require explicit
+          human approval and respect the spending limit before executing.
+        - Iteration limits: LangGraph runs pass recursion_limit; Strands runs pass
+          limits={"turns": ...}; custom loops have a hard upper bound.
+        - Async correctness: no blocking calls (time.sleep, requests, sync sqlite, input())
+          inside async def; every coroutine awaited or run in a TaskGroup; external calls
+          have timeouts.
+        - Exception handling: no bare except, no except Exception/BaseException, never
+          `pass` in an except block; retries only on transient errors with backoff.
+        - Prompt injection: free-text fields from tool results (supplier_notes,
+          driver_notes, site_notes) must be wrapped with wrap_untrusted() and must never be
+          interpolated into a system prompt or used to make routing/approval decisions.
+
+    - path: "src/northwind/agents/invoice_reconciler/**"
+      instructions: |
+        LangGraph StateGraph. Check state consistency between nodes:
+        - Every key a node returns is declared in InvoiceState (state.py), and every key a
+          node or edge function reads is written by some upstream node. Flag near-miss key
+          names (for example `purchase_orders` vs `purchase_order`).
+        - Conditional edges must have explicit path maps, every mapped destination must be
+          reachable from the routing function's possible return values, and every return
+          value must be in the map.
+        - Nodes that call interrupt() must not perform side effects before the interrupt,
+          because they re-run on resume.
+        - Resume payloads must be validated; post_invoice_decision must only run after
+          _authorize() succeeds.
+
+    - path: "src/northwind/agents/fuel_order_assistant/**"
+      instructions: |
+        Strands Agents code. Check that:
+        - @tool functions have accurate docstrings and type hints (they become the tool
+          schema the model sees) and return explicit success/error ToolResults.
+        - Hooks are registered for kill switch, approval gate, and audit; hook callbacks
+          that await must be async def; cancel_tool/cancel is set rather than raising.
+        - The model provider is built through build_strands_model() so MOCK_LLM is honored.
+
+    - path: "src/northwind/{safety,resilience,tracing,config}.py"
+      instructions: |
+        Shared safety primitives used by every agent. Any change that weakens the kill
+        switch, retry/backoff bounds, timeouts, tracing, or config validation is high
+        severity. Check that retry logic only retries transient errors and that timeouts
+        apply per attempt.
+
+    - path: "src/northwind/llm/**"
+      instructions: |
+        Model adapters. Confirm untrusted text is fenced and never promoted into system
+        prompts, real-model calls have timeouts and specific exception handling, and the
+        mock path remains deterministic and offline.
+
+    - path: "config/agents.toml"
+      instructions: |
+        Agent registry. Every agent needs risk_tier, an iteration limit (recursion_limit or
+        max_turns), per-tool timeouts, and high_risk_tools. Flag risk tiers that look too
+        low for what the agent can do, and spending limits that were raised without
+        explanation.
+
+    - path: "**/{mcp.json,.mcp.json,mcp.*.json,SKILL.md}"
+      instructions: |
+        MCP server or agent skill configuration. Flag broad filesystem roots (/, ~, $HOME,
+        wildcards), general-purpose shell or exec permissions, network access that is not
+        required, auto-approval of tool calls, and any inline credential or token, even if
+        it looks like a placeholder. Commands should point at reviewed, pinned local code.
+
+    - path: "tests/**"
+      instructions: |
+        Tests must run offline (MOCK_LLM=1). For agent changes, expect coverage of the happy
+        path, kill switch, approval gate, and iteration limit.
+
+  tools:
+    ruff:
+      enabled: true
+    gitleaks:
+      enabled: true
+    trufflehog:
+      enabled: true
+    skillspector:
+      enabled: true
+    yamllint:
+      enabled: true
+    markdownlint:
+      enabled: true
+    opengrep:
+      enabled: true
+    shellcheck:
+      enabled: true
+
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+    title:
+      mode: "warning"
+      requirements: >-
+        Use a conventional-commit style prefix (feat:, fix:, refactor:, chore:, docs:,
+        test:) followed by a short imperative summary.
+    description:
+      mode: "warning"
+    issue_assessment:
+      mode: "off"
+    custom_checks:
+      - name: "New agent safety controls"
+        mode: "error"
+        instructions: |
+          Scope: files under src/northwind/agents/ added or modified in this PR.
+          Fail if the PR adds a new agent (a new StateGraph, a new strands.Agent, or a new
+          module that runs a model/tool loop) or a new tool that spends money or writes to a
+          system of record, and that agent or tool lacks ANY of:
+          (a) a kill-switch check before every tool call (KillSwitch.check(), run_tool(), or
+              a KillSwitchHook registered on the agent);
+          (b) tracing via traced(), record_decision(), or run_tool() for its tool calls and
+              decisions;
+          (c) a human approval gate (ApprovalGateHook, interrupt() with _authorize(), or an
+              equivalent explicit approver call) before the high-risk action executes.
+          Pass if no new agent or high-risk tool is added, or if all three are present.
+          In the result, list each missing control with file and line.
+
+      - name: "Agent iteration limit"
+        mode: "error"
+        instructions: |
+          Fail if any agent run added or modified in this PR can loop without a hard upper
+          bound: a LangGraph invoke/ainvoke without recursion_limit in its config, a Strands
+          invoke_async/stream_async without limits={"turns": ...}, or a hand-written
+          while/for loop over model or tool calls with no maximum iteration count. Also fail
+          if a new agent is added without an entry in config/agents.toml that declares
+          risk_tier and recursion_limit or max_turns. Pass otherwise.
+
+      - name: "No blind or swallowed exceptions"
+        mode: "error"
+        instructions: |
+          Scope: Python files under src/ changed in this PR (ignore tests/).
+          Fail if any added or modified line introduces a bare `except:`,
+          `except Exception`, or `except BaseException` handler, or any except block whose
+          body is only `pass`, `...`, or `continue`. Pass if every new except clause names
+          specific exception types and either handles, logs/traces, or re-raises.
+
+      - name: "No blocking calls in async code"
+        mode: "error"
+        instructions: |
+          Scope: Python files under src/ changed in this PR.
+          Fail if any `async def` function added or modified in this PR calls time.sleep,
+          requests.* / urllib.request.*, a synchronous sqlite3 connection method, open() for
+          file I/O, or input() without wrapping it in asyncio.to_thread or
+          loop.run_in_executor. Also fail if a coroutine function is called without await,
+          asyncio.create_task, or TaskGroup.create_task (a coroutine that is never awaited).
+          Pass otherwise.
+
+      - name: "Untrusted tool output isolation"
+        mode: "error"
+        instructions: |
+          Fail if any changed code interpolates a field from a tool or service result
+          (for example supplier_notes, driver_notes, site_notes, or any free-text field
+          from the mocks) into a system prompt, a system_prompt= argument, or an
+          instruction string for a model, or uses such a field to decide routing,
+          approval, amounts, or which tool to call. Passing such text to a model is allowed
+          only as user/content data wrapped with wrap_untrusted(). Pass otherwise.
+
+      - name: "LangGraph state key consistency"
+        mode: "warning"
+        instructions: |
+          Scope: LangGraph code changed in this PR.
+          Fail if any node returns a key not declared in the graph's state TypedDict, any
+          node or routing function reads a key that no node writes, a conditional edge's
+          routing function can return a value missing from its path map, or a path-map
+          destination can never be returned by its routing function (unreachable branch).
+          Pass otherwise. Name the node, key, and file/line for each failure.
+
+      - name: "Tool call argument correctness"
+        mode: "warning"
+        instructions: |
+          Fail if any tool or service call added or modified in this PR passes positional
+          arguments in a different order than the callee's signature (for example swapping
+          site_id and product, or po_number and invoice_id), or passes a value whose type
+          clearly differs from the callee's annotation (for example a str where an int
+          gallons is expected, or a dict where an id string is expected). Pass otherwise.
+
+      - name: "MCP and skill least privilege"
+        mode: "error"
+        instructions: |
+          Scope: any mcp.json, .mcp.json, mcp.*.json, or SKILL.md file added or modified.
+          Fail if a configuration grants filesystem access to /, ~, $HOME, or a wildcard
+          root; grants general shell/exec/command permissions; auto-approves tool calls;
+          or contains an inline token, password, API key, or Authorization header value
+          (any value, including placeholders). Pass if no such files changed or if access
+          is scoped to specific directories and tools and credentials come from the
+          environment.
+
+      - name: "Tracing coverage"
+        mode: "warning"
+        instructions: |
+          Fail if this PR removes or bypasses a traced(), record_decision(), or run_tool()
+          call in src/northwind/agents/ without an equivalent replacement, or adds a graph
+          node or @tool function that emits no span or decision event (directly or via
+          run_tool()). Pass otherwise.
+
+      - name: "No hardcoded credentials"
+        mode: "error"
+        instructions: |
+          Fail if any added line assigns a literal value to a variable, config key, header,
+          or environment entry whose name contains TOKEN, SECRET, PASSWORD, API_KEY,
+          APIKEY, or AUTHORIZATION, outside of .env.example. Placeholder values still fail
+          when they appear in code or configuration that would be used at runtime. Pass
+          otherwise.
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "AGENTS.md"
