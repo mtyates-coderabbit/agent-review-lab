@@ -10,6 +10,7 @@ import sys
 from collections.abc import Sequence
 from typing import Any
 
+from northwind.agents.auto_reorder import AutoReorderAgent
 from northwind.agents.fuel_order_assistant import FuelOrderAssistant
 from northwind.agents.invoice_reconciler import InvoiceReconciler, RunResult
 from northwind.agents.invoice_reconciler.state import ReviewDecision
@@ -104,6 +105,17 @@ async def run_order(args: argparse.Namespace) -> int:
         backend.close()
 
 
+async def run_reorder(_args: argparse.Namespace) -> int:
+    backend = create_backend()
+    try:
+        orders = await AutoReorderAgent(backend).run()
+        for order in orders:
+            print("order:", json.dumps(order))
+        return 0
+    finally:
+        backend.close()
+
+
 def run_kill_switch(args: argparse.Namespace) -> int:
     switch = KillSwitch.from_settings()
     if args.action == "on":
@@ -134,6 +146,8 @@ def build_parser() -> argparse.ArgumentParser:
     order.add_argument("--yes", action="store_true", help="approve the order without prompting")
     order.add_argument("--approver", default="ops.manager@northwind.example")
 
+    sub.add_parser("reorder", help="top up every tank below its reorder point (Strands)")
+
     ks = sub.add_parser("kill-switch", help="engage, release, or inspect the kill switch")
     ks.add_argument("action", choices=["on", "off", "status"])
     return parser
@@ -148,6 +162,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         configure_tracing()
         if args.command == "invoice":
             return asyncio.run(run_invoice(args))
+        if args.command == "reorder":
+            return asyncio.run(run_reorder(args))
         return asyncio.run(run_order(args))
     except ConfigError as exc:
         print(f"configuration error: {exc}", file=sys.stderr)
