@@ -86,6 +86,16 @@ class ErpService(_Service):
             (po_number,),
         )
 
+    async def get_supplier_contract(self, supplier_id: str, product: str) -> dict[str, Any]:
+        rows = await self._query(
+            "erp.get_supplier_contract",
+            "SELECT * FROM supplier_contracts WHERE supplier_id = ? AND product = ?",
+            (supplier_id, product),
+        )
+        if not rows:
+            raise RecordNotFoundError(f"no {product} contract on file for {supplier_id}")
+        return rows[0]
+
     async def record_invoice_decision(
         self, invoice_id: str, decision: str, reason: str, decided_by: str
     ) -> dict[str, Any]:

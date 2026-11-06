@@ -33,6 +33,10 @@ CREATE TABLE tanks (
     site_id TEXT, product TEXT, capacity_gal INTEGER, current_gal INTEGER,
     reorder_point_gal INTEGER, site_notes TEXT, PRIMARY KEY (site_id, product)
 );
+CREATE TABLE supplier_contracts (
+    supplier_id TEXT, product TEXT, max_price_per_gallon REAL, payment_terms_days INTEGER,
+    PRIMARY KEY (supplier_id, product)
+);
 CREATE TABLE price_list (
     supplier_id TEXT, product TEXT, price_per_gallon REAL, supplier_notes TEXT,
     PRIMARY KEY (supplier_id, product)
@@ -80,6 +84,10 @@ class MockDatabase:
             self._conn.executemany("INSERT INTO tanks VALUES (?, ?, ?, ?, ?, ?)", fixtures.TANKS)
             self._conn.executemany(
                 "INSERT INTO price_list VALUES (?, ?, ?, ?)", fixtures.PRICE_LIST
+            )
+            self._conn.executemany(
+                "INSERT INTO supplier_contracts VALUES (?, ?, ?, ?)",
+                fixtures.SUPPLIER_CONTRACTS,
             )
 
     def query(self, sql: str, params: Iterable[Any] = ()) -> list[dict[str, Any]]:

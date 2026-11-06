@@ -116,6 +116,23 @@ def find_discrepancies(
     return found
 
 
+def contract_discrepancies(invoice: dict[str, Any], contract: dict[str, Any]) -> list[Discrepancy]:
+    """Compare an invoice against the supplier's negotiated contract terms."""
+    cap = contract["max_price_per_gallon"]
+    if invoice["price_per_gallon"] > cap:
+        return [
+            {
+                "kind": "contract_price",
+                "severity": "critical",
+                "detail": (
+                    f"invoice price ${invoice['price_per_gallon']:.3f}/gal exceeds "
+                    f"{invoice['supplier_id']} contract cap ${cap:.3f}/gal"
+                ),
+            }
+        ]
+    return []
+
+
 def choose_route(
     discrepancies: list[Discrepancy], invoice_total: float, config: AgentConfig
 ) -> Route:
