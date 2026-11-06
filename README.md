@@ -44,6 +44,10 @@ uv run demo invoice all --decision approve
 uv run demo order "Order 5000 gal diesel for NW-DEPOT-01"
 ```
 
+Pass `--log-level INFO` (before the subcommand) or set `NORTHWIND_LOG_LEVEL` to see
+retry and fallback messages. Each log line includes the trace and span IDs of the
+work that produced it, so it can be matched to the spans in `traces/`.
+
 `MOCK_LLM` is on by default. In mock mode the LangGraph agent uses a deterministic
 summarizer and the Strands agent uses `ScriptedOrderModel`, a `strands.models.Model`
 implementation that plans tool calls from the conversation the same way a real model
@@ -129,6 +133,7 @@ writes the reviewer summary; routing stays deterministic.
 | Kill switch (`NORTHWIND_KILL_SWITCH=1` or the `.killswitch` file) | `safety.py` `KillSwitch`, checked before every tool call |
 | Per-tool timeout, retries with exponential backoff and jitter | `resilience.py` `run_tool()` |
 | OpenTelemetry spans for runs, nodes, tools, and decisions, written as JSON lines to `traces/` | `tracing.py` |
+| Logs stamped with the current trace and span IDs | `logging_config.py` |
 | Untrusted free-text fencing and an injection heuristic | `llm/untrusted.py` |
 | Engineering standards for reviewers | [`AGENTS.md`](AGENTS.md) |
 
@@ -141,7 +146,7 @@ src/northwind/
   agents/fuel_order_assistant/   Strands agent
   llm/                           mock and Anthropic model adapters, untrusted-text helpers
   mocks/                         in-memory SQLite seed data and async service clients
-  config.py safety.py resilience.py tracing.py cli.py
+  config.py safety.py resilience.py tracing.py logging_config.py cli.py
 tests/                           offline pytest suite
 ```
 

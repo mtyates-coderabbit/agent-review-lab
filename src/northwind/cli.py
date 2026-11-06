@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import logging
 import sys
 from collections.abc import Sequence
 from typing import Any
@@ -16,6 +15,7 @@ from northwind.agents.invoice_reconciler.state import ReviewDecision
 from northwind.config import ConfigError, load_runtime_settings
 from northwind.llm.strands_models import build_strands_model
 from northwind.llm.text import build_text_model
+from northwind.logging_config import LOG_LEVEL_ENV, configure_logging
 from northwind.mocks import create_backend
 from northwind.mocks.fixtures import INVOICES
 from northwind.safety import ApprovalDecision, ApprovalRequest, KillSwitch
@@ -117,6 +117,13 @@ def run_kill_switch(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="demo", description="Northwind Fuel Co. agent demos")
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        type=str.upper,
+        default=None,
+        help=f"log level for stderr output (default: ${LOG_LEVEL_ENV} or WARNING)",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     inv = sub.add_parser("invoice", help="reconcile a supplier invoice (LangGraph)")
@@ -140,8 +147,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     args = build_parser().parse_args(argv)
+    configure_logging(args.log_level)
     try:
         if args.command == "kill-switch":
             return run_kill_switch(args)

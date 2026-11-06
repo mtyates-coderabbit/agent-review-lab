@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import Any
 
 from strands.hooks import (
@@ -28,8 +27,6 @@ from northwind.mocks.errors import RecordNotFoundError
 from northwind.mocks.services import PricingService
 from northwind.safety import ApprovalRequest, Approver, KillSwitch
 from northwind.tracing import record_decision
-
-logger = logging.getLogger(__name__)
 
 APPROVER_TIMEOUT_SECONDS = 300.0
 
