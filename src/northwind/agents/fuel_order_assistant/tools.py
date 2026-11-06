@@ -8,6 +8,7 @@ model sees them.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from strands import ToolContext, tool
@@ -21,6 +22,8 @@ from northwind.resilience import ToolCallFailed, run_tool
 from northwind.safety import ApprovalDecision, KillSwitch, KillSwitchEngaged
 
 APPROVALS_KEY = "northwind_approvals"
+GAUGE_POLL_INTERVAL_SECONDS = 0.25
+GAUGE_MAX_POLLS = 4
 
 
 def _ok(data: dict[str, Any]) -> ToolResult:
@@ -36,13 +39,33 @@ def build_order_tools(
 ) -> list[AgentTool]:
     spending_limit = float(config.option("spending_limit_usd"))
 
+    async def refresh_from_gauges(site_id: str) -> int:
+        readings = backend.telemetry.read_gauges(site_id)
+        polls = 1
+        while not all(r["settled"] for r in readings) and polls < GAUGE_MAX_POLLS:
+            time.sleep(GAUGE_POLL_INTERVAL_SECONDS)
+            readings = backend.telemetry.read_gauges(site_id)
+            polls += 1
+        for reading in readings:
+            backend.inventory.apply_gauge_reading(site_id, reading["product"], reading["gallons"])
+        backend.telemetry.publish_refresh_event(site_id, readings)
+        return len(readings)
+
     @tool
     async def check_tank_inventory(site_id: str) -> ToolResult:
         """Return current tank levels for a Northwind site.
 
+        Levels are refreshed from the site's tank gauges first so the answer reflects
+        what is physically in the tank, not the last ERP sync.
+
         Args:
             site_id: Site identifier, for example NW-DEPOT-01.
         """
+        try:
+            await run_tool(config, kill_switch, "refresh_tank_levels", refresh_from_gauges, site_id)
+        except Exception:
+            pass
+
         try:
             tanks = await run_tool(
                 config,
