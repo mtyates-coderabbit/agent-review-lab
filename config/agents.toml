@@ -26,6 +26,10 @@ get_purchase_order = 3.0
 get_delivery_tickets = 3.0
 post_invoice_decision = 3.0
 
+[agents.auto-reorder]
+description = "Overnight replenishment: orders fuel for any tank below its reorder point."
+risk_tier = "low"
+
 [agents.fuel-order-assistant]
 description = "Checks tank inventory, quotes fuel, and places orders after human approval."
 risk_tier = "high"

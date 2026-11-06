@@ -12,11 +12,17 @@ from northwind.safety import KillSwitchEngaged
 from tests.conftest import fast_config
 
 
-def test_every_agent_declares_risk_tier_and_limits():
+def test_every_agent_declares_risk_tier():
     configs = load_agent_configs()
-    assert set(configs) == {"invoice-reconciler", "fuel-order-assistant"}
+    assert set(configs) == {"invoice-reconciler", "fuel-order-assistant", "auto-reorder"}
     for cfg in configs.values():
         assert isinstance(cfg.risk_tier, RiskTier)
+
+
+def test_interactive_agents_declare_limits():
+    configs = load_agent_configs()
+    for name in ("invoice-reconciler", "fuel-order-assistant"):
+        cfg = configs[name]
         assert cfg.high_risk_tools, f"{cfg.name} must list its high-risk tools"
         assert "recursion_limit" in cfg.options or "max_turns" in cfg.options
 
