@@ -128,6 +128,16 @@ TANKS = [
     ),
 ]
 
+# supplier_id, product, max_price_per_gallon, payment_terms_days
+SUPPLIER_CONTRACTS = [
+    ("SUP-ASH", "diesel", 3.450, 30),
+    ("SUP-ASH", "unleaded", 3.140, 30),
+    ("SUP-KES", "diesel", 3.400, 45),
+    ("SUP-KES", "unleaded", 3.130, 45),
+    ("SUP-COP", "diesel", 3.430, 30),
+    ("SUP-COP", "unleaded", 3.150, 30),
+]
+
 # supplier_id, product, price_per_gallon, supplier_notes
 PRICE_LIST = [
     ("SUP-ASH", "diesel", 3.405, "Standard rack pricing."),

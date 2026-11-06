@@ -24,6 +24,7 @@ high_risk_tools = ["post_invoice_decision"]
 get_invoice = 3.0
 get_purchase_order = 3.0
 get_delivery_tickets = 3.0
+get_supplier_contract = 3.0
 post_invoice_decision = 3.0
 
 [agents.fuel-order-assistant]

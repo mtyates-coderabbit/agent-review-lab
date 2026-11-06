@@ -2,12 +2,14 @@
 
 Flow::
 
-    START -> load_invoice --> fetch_records -> check_discrepancies -> summarize
+    START -> load_invoice --> fetch_records -> fetch_supplier_contract
+          -> check_discrepancies -> summarize
     load_invoice  (invoice missing)        --> reject
     summarize     (route == auto_approve)  --> approve
     summarize     (route == human_review)  --> human_review --> approve | reject
     summarize     (route == reject)        --> reject
-    approve, reject --> END
+    summarize     (route == escalate)      --> escalate_to_procurement
+    approve, reject, escalate_to_procurement --> END
 
 ``human_review`` pauses the graph with ``interrupt()``. The checkpointer keeps
 the paused state, and the caller resumes with ``Command(resume=ReviewDecision)``.
@@ -30,7 +32,11 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, interrupt
 
-from northwind.agents.invoice_reconciler.rules import choose_route, find_discrepancies
+from northwind.agents.invoice_reconciler.rules import (
+    choose_route,
+    contract_discrepancies,
+    find_discrepancies,
+)
 from northwind.agents.invoice_reconciler.state import InvoiceState, ReviewDecision, Route
 from northwind.agents.invoice_reconciler.tools import InvoiceTools
 from northwind.config import AgentConfig, get_agent_config
@@ -159,12 +165,27 @@ class InvoiceReconciler:
             raise group.exceptions[0] from None
         return {"purchase_order": po_task.result(), "delivery_tickets": tickets_task.result()}
 
+    async def fetch_supplier_contract(self, state: InvoiceState) -> dict[str, Any]:
+        invoice = state["invoice"]
+        assert invoice is not None  # noqa: S101
+        try:
+            contract = await self.tools.get_supplier_contract(
+                invoice["product"], invoice["supplier_id"]
+            )
+        except RecordNotFoundError:
+            logger.info("no contract on file for %s", invoice["supplier_id"])
+            contract = None
+        return {"supplier_contracts": contract}
+
     async def check_discrepancies(self, state: InvoiceState) -> dict[str, Any]:
         invoice = state["invoice"]
         assert invoice is not None  # noqa: S101
         discrepancies = find_discrepancies(
             invoice, state.get("purchase_order"), state.get("delivery_tickets", []), self.config
         )
+        contract = state.get("supplier_contract")
+        if contract is not None:
+            discrepancies += contract_discrepancies(invoice, contract)
         route = choose_route(discrepancies, invoice["total_usd"], self.config)
         flags = []
         if looks_like_injection(invoice.get("supplier_notes")):
@@ -268,6 +289,12 @@ class InvoiceReconciler:
     async def reject(self, state: InvoiceState) -> dict[str, Any]:
         return await self._post(state, "rejected")
 
+    async def escalate_to_procurement(self, state: InvoiceState) -> dict[str, Any]:
+        record_decision(AGENT_NAME, "escalated", **{"invoice.id": state["invoice_id"]})
+        result = await self._post(state, "rejected")
+        result["outcome_reason"] = f"held for procurement review: {result['outcome_reason']}"
+        return result
+
     # -- edges ---------------------------------------------------------------
 
     @staticmethod
@@ -288,11 +315,13 @@ class InvoiceReconciler:
         for name in (
             "load_invoice",
             "fetch_records",
+            "fetch_supplier_contract",
             "check_discrepancies",
             "summarize",
             "human_review",
             "approve",
             "reject",
+            "escalate_to_procurement",
         ):
             builder.add_node(name, self._node(name, getattr(self, name)))
 
@@ -302,18 +331,25 @@ class InvoiceReconciler:
             self.route_after_load,
             {"fetch_records": "fetch_records", "reject": "reject"},
         )
-        builder.add_edge("fetch_records", "check_discrepancies")
+        builder.add_edge("fetch_records", "fetch_supplier_contract")
+        builder.add_edge("fetch_supplier_contract", "check_discrepancies")
         builder.add_edge("check_discrepancies", "summarize")
         builder.add_conditional_edges(
             "summarize",
             self.route_after_summary,
-            {"auto_approve": "approve", "human_review": "human_review", "reject": "reject"},
+            {
+                "auto_approve": "approve",
+                "human_review": "human_review",
+                "reject": "reject",
+                "escalate": "escalate_to_procurement",
+            },
         )
         builder.add_conditional_edges(
             "human_review", self.route_after_review, {"approve": "approve", "reject": "reject"}
         )
         builder.add_edge("approve", END)
         builder.add_edge("reject", END)
+        builder.add_edge("escalate_to_procurement", END)
         return builder.compile(checkpointer=checkpointer, name=AGENT_NAME)
 
     # -- running -------------------------------------------------------------

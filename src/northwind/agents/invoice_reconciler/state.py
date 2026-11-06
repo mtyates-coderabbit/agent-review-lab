@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, NotRequired, Required, TypedDict
 
-Route = Literal["auto_approve", "human_review", "reject"]
+Route = Literal["auto_approve", "human_review", "reject", "escalate"]
 Outcome = Literal["approved", "rejected"]
 DiscrepancyKind = Literal[
     "invoice_not_found",
@@ -19,6 +19,7 @@ DiscrepancyKind = Literal[
     "price",
     "delivery_date",
     "total",
+    "contract_price",
 ]
 Severity = Literal["minor", "critical"]
 
@@ -40,6 +41,7 @@ class InvoiceState(TypedDict, total=False):
     invoice: dict[str, Any] | None
     purchase_order: dict[str, Any] | None
     delivery_tickets: list[dict[str, Any]]
+    supplier_contracts: dict[str, Any] | None
     discrepancies: list[Discrepancy]
     injection_flags: list[str]
     route: Route
